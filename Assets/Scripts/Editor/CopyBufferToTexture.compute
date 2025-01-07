@@ -1,0 +1,23 @@
+#pragma kernel CSMain
+
+RWTexture2D<float4> Result;
+StructuredBuffer<float> InputBuffer;
+
+uint TextureWidth;
+uint TextureHeight;
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    // Make sure we don't write outside the texture bounds
+    if (id.x >= TextureWidth || id.y >= TextureHeight)
+        return;
+        
+    uint index = (id.y * TextureWidth + id.x) * 4;
+    Result[id.xy] = float4(
+        InputBuffer[index],
+        InputBuffer[index + 1],
+        InputBuffer[index + 2],
+        InputBuffer[index + 3]
+    );
+}

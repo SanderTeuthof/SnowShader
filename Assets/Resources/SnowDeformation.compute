@@ -1,0 +1,76 @@
+#pragma kernel CSMain
+
+RWTexture2D<float4> Result;
+StructuredBuffer<float> InputBuffer;
+float2 DeformationCenter;
+float DeformationRadius;
+float DeformationStrength;
+float RimWidth;
+float RimStrength;
+float StandardValue;
+float4x4 WorldToUV;
+float4x4 UVToWorld;
+
+float CalculateRimProfile(float t)
+{
+    return smoothstep(0, 1, t);
+}
+
+float2 TransformUVToWorld(float2 uv)
+{
+    float4 worldPos = mul(UVToWorld, float4(uv.x, uv.y, 0, 1));
+    return worldPos.xy;
+}
+
+float2 TransformWorldToUV(float2 worldPos)
+{
+    float4 uvPos = mul(WorldToUV, float4(worldPos.x, worldPos.y, 0, 1));
+    return uvPos.xy;
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    Result.GetDimensions(width, height);
+    
+    if (id.x >= width || id.y >= height)
+        return;
+        
+    float2 uv = float2(id.x / (float) width, id.y / (float) height);
+    float4 currentValue = Result[id.xy];
+    
+    // Convert UV positions to world space for distance calculation
+    float2 worldPos = TransformUVToWorld(uv);
+    float2 deformationWorldPos = TransformUVToWorld(DeformationCenter);
+    
+    // Calculate distance in world space
+    float dist = length(worldPos - deformationWorldPos);
+    
+    if (dist > DeformationRadius)
+        return;
+        
+    float value = currentValue.r;
+    float tolerance = 0.01;
+    
+    if (dist <= DeformationRadius - RimWidth)
+    {
+        float deformation = saturate(1 - dist / DeformationRadius);
+        deformation = smoothstep(0, StandardValue, deformation);
+        value = min(value, saturate(1 - (deformation * DeformationStrength)));
+    }
+    else if (dist <= DeformationRadius)
+    {
+        if (currentValue.r > (StandardValue - 0.01) && currentValue.r < (StandardValue + 0.01))
+        {
+            float rimDist = dist - (DeformationRadius - RimWidth);
+            float rimFactor = saturate(1 - (rimDist / RimWidth));
+            float profileValue = CalculateRimProfile(rimFactor);
+            
+            float rimHeight = profileValue * RimStrength;
+            value = StandardValue + rimHeight;
+        }
+    }
+    
+    Result[id.xy] = float4(value, value, value, value);
+}
